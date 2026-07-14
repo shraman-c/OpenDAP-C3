@@ -13,23 +13,13 @@ constexpr uint8_t PIN_ADC = 1;
 constexpr uint8_t PIN_UART_TX = 4;
 constexpr uint8_t PIN_UART_RX = 5;
 
-// ADC Button Thresholds in millivolts (Configurable, contiguous)
-constexpr int ADC_PLAY_MIN = 0;
-constexpr int ADC_PLAY_MAX = 50;
-
-constexpr int ADC_NEXT_MIN = 51;
-constexpr int ADC_NEXT_MAX = 150;
-
-constexpr int ADC_PREV_MIN = 151;
-constexpr int ADC_PREV_MAX = 600;
-
-constexpr int ADC_VOLUP_MIN = 601;
-constexpr int ADC_VOLUP_MAX = 1300;
-
-constexpr int ADC_VOLDOWN_MIN = 1301;
-constexpr int ADC_VOLDOWN_MAX = 2200;
-
-constexpr int ADC_NO_BUTTON_MIN = 2201;
+// ADC Button Thresholds (Configurable, contiguous to prevent gaps)
+constexpr int ADC_PLAY_MAX = 1135;
+constexpr int ADC_NEXT_MAX = 1295;
+constexpr int ADC_PREV_MAX = 1705;
+constexpr int ADC_VOLDOWN_MAX = 2345;
+constexpr int ADC_VOLUP_MAX = 3400;
+// Anything > 3400 is NO_BUTTON
 
 // Timing constants
 constexpr unsigned long DEBOUNCE_DELAY_MS = 50;
@@ -192,20 +182,19 @@ void enterDeepSleep() {
 int getAveragedAdc() {
     long sum = 0;
     for (int i = 0; i < 16; i++) {
-        sum += analogReadMilliVolts(PIN_ADC);
+        sum += analogRead(PIN_ADC);
         delayMicroseconds(100);
     }
     return sum / 16;
 }
 
 ButtonId decodeAdc(int adcValue) {
-    if (adcValue > ADC_NO_BUTTON_MIN) return ButtonId::NONE;
-    if (adcValue >= ADC_PLAY_MIN && adcValue <= ADC_PLAY_MAX) return ButtonId::PLAY_PAUSE;
-    if (adcValue >= ADC_NEXT_MIN && adcValue <= ADC_NEXT_MAX) return ButtonId::NEXT;
-    if (adcValue >= ADC_PREV_MIN && adcValue <= ADC_PREV_MAX) return ButtonId::PREVIOUS;
-    if (adcValue >= ADC_VOLUP_MIN && adcValue <= ADC_VOLUP_MAX) return ButtonId::VOL_UP;
-    if (adcValue >= ADC_VOLDOWN_MIN && adcValue <= ADC_VOLDOWN_MAX) return ButtonId::VOL_DOWN;
-    return ButtonId::UNKNOWN;
+    if (adcValue > ADC_VOLUP_MAX) return ButtonId::NONE;
+    if (adcValue <= ADC_PLAY_MAX) return ButtonId::PLAY_PAUSE;
+    if (adcValue <= ADC_NEXT_MAX) return ButtonId::NEXT;
+    if (adcValue <= ADC_PREV_MAX) return ButtonId::PREVIOUS;
+    if (adcValue <= ADC_VOLDOWN_MAX) return ButtonId::VOL_DOWN;
+    return ButtonId::VOL_UP;
 }
 
 void handleButtonEvent(ButtonId btn, ButtonEvent event) {
@@ -268,7 +257,7 @@ void handleButtonEvent(ButtonId btn, ButtonEvent event) {
 void processButtons() {
     unsigned long now = millis();
     
-    currentAdcRaw = analogReadMilliVolts(PIN_ADC);
+    currentAdcRaw = analogRead(PIN_ADC);
     currentAdcAvg = getAveragedAdc();
     
     ButtonId readButton = decodeAdc(currentAdcAvg);
@@ -287,12 +276,20 @@ void processButtons() {
                 buttonPressTime = now;
                 buttonHandledLongPress = false;
                 isHolding = false;
-                lastHoldRepeat = now;
+                
+                // Immediately trigger short press for volume buttons for responsiveness
+                if (readButton == ButtonId::VOL_UP || readButton == ButtonId::VOL_DOWN) {
+                    handleButtonEvent(readButton, ButtonEvent::SHORT_PRESS);
+                    buttonHandledLongPress = true; // Prevent triggering on release
+                    isHolding = true;
+                    lastHoldRepeat = now + 500; // Wait 500ms before repeating
+                }
             } else {
                 // Button Released
-                if (!buttonHandledLongPress && currentButton != ButtonId::NONE && currentButton != ButtonId::UNKNOWN) {
+                if (!buttonHandledLongPress && currentButton != ButtonId::NONE) {
                     // Check for double press
-                    if (currentButton == lastReleasedButton && (now - lastReleaseTime) < DOUBLE_PRESS_MS) {
+                    if ((currentButton == ButtonId::NEXT || currentButton == ButtonId::PREVIOUS) && 
+                        currentButton == lastReleasedButton && (now - lastReleaseTime) < DOUBLE_PRESS_MS) {
                         handleButtonEvent(currentButton, ButtonEvent::DOUBLE_PRESS);
                         lastReleasedButton = ButtonId::NONE; // Reset
                     } else {
@@ -304,18 +301,19 @@ void processButtons() {
                 }
             }
             currentButton = readButton;
-        } else if (currentButton != ButtonId::NONE && currentButton != ButtonId::UNKNOWN) {
+        } else if (currentButton != ButtonId::NONE) {
             // Button is being held
-            if (!buttonHandledLongPress && (now - buttonPressTime) > LONG_PRESS_MS) {
+            if (currentButton == ButtonId::PLAY_PAUSE && !buttonHandledLongPress && (now - buttonPressTime) > LONG_PRESS_MS) {
                 handleButtonEvent(currentButton, ButtonEvent::LONG_PRESS);
                 buttonHandledLongPress = true;
-                isHolding = true;
             }
             
             // Continuous hold action for volume
-            if (isHolding && (now - lastHoldRepeat) > HOLD_REPEAT_MS) {
-                handleButtonEvent(currentButton, ButtonEvent::HOLD);
-                lastHoldRepeat = now;
+            if ((currentButton == ButtonId::VOL_UP || currentButton == ButtonId::VOL_DOWN) && isHolding) {
+                if (now >= lastHoldRepeat) {
+                    handleButtonEvent(currentButton, ButtonEvent::HOLD);
+                    lastHoldRepeat = now + HOLD_REPEAT_MS;
+                }
             }
         }
     }
