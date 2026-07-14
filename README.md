@@ -24,3 +24,6 @@ pio run
 ```
 
 See [Wiring Table](Wiring_Table.md) for pin connections.
+
+## License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
