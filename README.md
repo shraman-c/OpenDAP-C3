@@ -11,11 +11,22 @@ An open-source portable Digital Audio Player based on the ESP32-C3 Super Mini an
 - Debug console over UART
 
 ## Hardware
+![Hardware Setup](hardware.jpg)
+
 - **MCU**: ESP32-C3 Super Mini
 - **Audio Decoder**: DFRobot DFPlayer Mini
 - **Battery**: 3.7V Li-ion 402020 (400mAh)
 - **Charging**: TP4056 USB-C Module
 - **Regulator**: LM2950-3.3
+
+### Basic Wiring Table
+| Component | ESP32-C3 Pin |
+|---|---|
+| DFPlayer RX | GPIO4 |
+| DFPlayer TX | GPIO5 |
+| Button Ladder | GPIO1 |
+
+*(See [Wiring_Table.md](Wiring_Table.md) for detailed power and resistor connections)*
 
 ## Firmware Compilation
 The firmware is written using the Arduino Framework in PlatformIO.
