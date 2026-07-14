@@ -3,12 +3,14 @@
 The following table describes the pin connections between the ESP32-C3 Super Mini and the external components.
 
 ## DFPlayer Mini
-| ESP32-C3 Pin | DFPlayer Pin | Description |
+| ESP32-C3 Pin / External | DFPlayer Pin | Description |
 |---|---|---|
 | GPIO4 | RX | Serial Transmit from ESP32 |
 | GPIO5 | TX | Serial Receive to ESP32 |
 | 3.3V | VCC | Power |
 | GND | GND | Ground |
+| USB-C D+ | USB+ | USB Data Positive (for PC file transfer) |
+| USB-C D- | USB- | USB Data Negative (for PC file transfer) |
 
 > Note: Audio output from the DFPlayer is taken directly from the DAC_R and DAC_L pins to the 3.5mm Headphone Jack.
 

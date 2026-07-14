@@ -20,10 +20,11 @@ An open-source portable Digital Audio Player based on the ESP32-C3 Super Mini an
 - **Regulator**: LM2950-3.3
 
 ### Basic Wiring Table
-| Component | ESP32-C3 Pin |
+| Component | ESP32-C3 / External Pin |
 |---|---|
 | DFPlayer RX | GPIO4 |
 | DFPlayer TX | GPIO5 |
+| DFPlayer USB+ / USB- | USB-C Breakout D+ / D- |
 | Button Ladder | GPIO1 |
 
 *(See [Wiring_Table.md](Wiring_Table.md) for detailed power and resistor connections)*
