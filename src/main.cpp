@@ -13,23 +13,23 @@ constexpr uint8_t PIN_ADC = 1;
 constexpr uint8_t PIN_UART_TX = 4;
 constexpr uint8_t PIN_UART_RX = 5;
 
-// ADC Button Thresholds (Configurable)
-constexpr int ADC_PLAY_MIN = 20;
-constexpr int ADC_PLAY_MAX = 60;
+// ADC Button Thresholds in millivolts (Configurable, contiguous)
+constexpr int ADC_PLAY_MIN = 0;
+constexpr int ADC_PLAY_MAX = 50;
 
-constexpr int ADC_NEXT_MIN = 70;
-constexpr int ADC_NEXT_MAX = 120;
+constexpr int ADC_NEXT_MIN = 51;
+constexpr int ADC_NEXT_MAX = 150;
 
-constexpr int ADC_PREV_MIN = 250;
-constexpr int ADC_PREV_MAX = 500;
+constexpr int ADC_PREV_MIN = 151;
+constexpr int ADC_PREV_MAX = 600;
 
-constexpr int ADC_VOLUP_MIN = 900;
-constexpr int ADC_VOLUP_MAX = 1700;
+constexpr int ADC_VOLUP_MIN = 601;
+constexpr int ADC_VOLUP_MAX = 1300;
 
-constexpr int ADC_VOLDOWN_MIN = 1800;
-constexpr int ADC_VOLDOWN_MAX = 2500;
+constexpr int ADC_VOLDOWN_MIN = 1301;
+constexpr int ADC_VOLDOWN_MAX = 2200;
 
-constexpr int ADC_NO_BUTTON_MIN = 3500;
+constexpr int ADC_NO_BUTTON_MIN = 2201;
 
 // Timing constants
 constexpr unsigned long DEBOUNCE_DELAY_MS = 50;
@@ -192,7 +192,7 @@ void enterDeepSleep() {
 int getAveragedAdc() {
     long sum = 0;
     for (int i = 0; i < 16; i++) {
-        sum += analogRead(PIN_ADC);
+        sum += analogReadMilliVolts(PIN_ADC);
         delayMicroseconds(100);
     }
     return sum / 16;
@@ -268,7 +268,7 @@ void handleButtonEvent(ButtonId btn, ButtonEvent event) {
 void processButtons() {
     unsigned long now = millis();
     
-    currentAdcRaw = analogRead(PIN_ADC);
+    currentAdcRaw = analogReadMilliVolts(PIN_ADC);
     currentAdcAvg = getAveragedAdc();
     
     ButtonId readButton = decodeAdc(currentAdcAvg);
