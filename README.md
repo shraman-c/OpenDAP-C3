@@ -11,7 +11,8 @@ An open-source portable Digital Audio Player based on the ESP32-C3 Super Mini an
 - Debug console over UART
 
 ## Hardware
-![Hardware Setup](hardware.jpg)
+![Hardware Setup](images/hardware.jpg)
+*Prototype Product image*
 
 - **MCU**: ESP32-C3 Super Mini
 - **Audio Decoder**: DFRobot DFPlayer Mini
