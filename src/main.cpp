@@ -181,11 +181,19 @@ void enterDeepSleep() {
 // ============================================================================
 int getAveragedAdc() {
     long sum = 0;
-    for (int i = 0; i < 16; i++) {
-        sum += analogRead(PIN_ADC);
-        delayMicroseconds(100);
+    int minVal = 4096;
+    int maxVal = -1;
+    
+    // Take 34 samples, discard the highest and lowest, average the remaining 32
+    for (int i = 0; i < 34; i++) {
+        int val = analogRead(PIN_ADC);
+        if (val < minVal) minVal = val;
+        if (val > maxVal) maxVal = val;
+        sum += val;
+        delayMicroseconds(50);
     }
-    return sum / 16;
+    sum = sum - minVal - maxVal;
+    return sum / 32;
 }
 
 ButtonId decodeAdc(int adcValue) {
