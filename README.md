@@ -25,5 +25,22 @@ pio run
 
 See [Wiring Table](Wiring_Table.md) for pin connections.
 
-## License
+## Future Improvements
+- Navigation to Next/Previous folders (requires explicit folder index tracking for DFPlayer Mini).
+- Enhanced debouncing filters.
+- Display support (e.g., small OLED screen for track info).
+
+## Contributing & Forking
+We welcome contributions to the OpenDAP-C3 project! If you'd like to help out or make your own custom version, please follow the steps below.
+
+### **How to fork:**
+1. Click the **Fork** button at the top right of this repository to create your own copy.
+2. Clone your fork locally: `git clone https://github.com/your-username/OpenDAP-C3.git`
+3. Create a new branch for your feature or bugfix: `git checkout -b my-new-feature`
+4. Commit your changes and push the branch to your fork.
+5. Submit a Pull Request back to the main repository!
+
+## License & Copyright
+Copyright (c) 2026 Shraman C.
+
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
