@@ -31,13 +31,47 @@ void ButtonManager::configureLadder(float rPullup, float rPlay, float rPrev, flo
     _mvVolDown = (int)(3300.0f * rVolDown / (rPullup + rVolDown));
     _mvVolUp   = (int)(3300.0f * rVolUp / (rPullup + rVolUp));
     
-    Serial.println("--- ButtonManager Expected mV ---");
+    Serial.println("--- ButtonManager Expected mV (PARALLEL) ---");
     Serial.printf("PLAY: %d mV\n", _mvPlay);
     Serial.printf("PREV: %d mV\n", _mvPrev);
     Serial.printf("NEXT: %d mV\n", _mvNext);
     Serial.printf("VOLDOWN: %d mV\n", _mvVolDown);
     Serial.printf("VOLUP: %d mV\n", _mvVolUp);
-    Serial.println("---------------------------------");
+    Serial.println("--------------------------------------------");
+}
+
+void ButtonManager::configureLadderSeries(float rPullup, float rPlay, float rPrev, float rNext, float rVolDown, float rVolUp) {
+    float totalPlay = rPlay;
+    float totalPrev = totalPlay + rPrev;
+    float totalNext = totalPrev + rNext;
+    float totalVolDown = totalNext + rVolDown;
+    float totalVolUp = totalVolDown + rVolUp;
+    
+    // Calculate expected nominal Millivolts for a series ladder
+    _mvPlay    = (int)(3300.0f * totalPlay / (rPullup + totalPlay));
+    _mvPrev    = (int)(3300.0f * totalPrev / (rPullup + totalPrev));
+    _mvNext    = (int)(3300.0f * totalNext / (rPullup + totalNext));
+    _mvVolDown = (int)(3300.0f * totalVolDown / (rPullup + totalVolDown));
+    _mvVolUp   = (int)(3300.0f * totalVolUp / (rPullup + totalVolUp));
+    
+    Serial.println("--- ButtonManager Expected mV (SERIES) ---");
+    Serial.printf("PLAY: %d mV\n", _mvPlay);
+    Serial.printf("PREV: %d mV\n", _mvPrev);
+    Serial.printf("NEXT: %d mV\n", _mvNext);
+    Serial.printf("VOLDOWN: %d mV\n", _mvVolDown);
+    Serial.printf("VOLUP: %d mV\n", _mvVolUp);
+    Serial.println("------------------------------------------");
+}
+
+void ButtonManager::setExpectedMv(ButtonId btn, int mv) {
+    switch (btn) {
+        case ButtonId::PLAY_PAUSE: _mvPlay = mv; break;
+        case ButtonId::PREVIOUS: _mvPrev = mv; break;
+        case ButtonId::NEXT: _mvNext = mv; break;
+        case ButtonId::VOL_DOWN: _mvVolDown = mv; break;
+        case ButtonId::VOL_UP: _mvVolUp = mv; break;
+        default: break;
+    }
 }
 
 int ButtonManager::getAveragedMilliVolts() {

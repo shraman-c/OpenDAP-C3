@@ -28,8 +28,14 @@ public:
     void begin();
     void loop();
     
-    // Call this in setup to map the ladder
+    // Call this in setup to map the ladder as parallel
     void configureLadder(float rPullup, float rPlay, float rPrev, float rNext, float rVolDown, float rVolUp);
+
+    // Call this in setup to map the ladder as series (accumulating)
+    void configureLadderSeries(float rPullup, float rPlay, float rPrev, float rNext, float rVolDown, float rVolUp);
+
+    // Override the expected millivolts for a specific button (e.g. from EEPROM)
+    void setExpectedMv(ButtonId btn, int mv);
 
     // Debug access
     int getCurrentMvRaw() const { return _currentMvRaw; }

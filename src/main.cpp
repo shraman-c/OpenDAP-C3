@@ -155,6 +155,22 @@ void initPreferences() {
     }
     
     Serial.printf("Loaded config - Volume: %d, Song: %d\n", currentVolume, currentSong);
+    
+    // Load learned button voltages if they exist
+    int learnedPlay = preferences.getInt("mvPlay", -1);
+    if (learnedPlay != -1) buttonManager.setExpectedMv(ButtonId::PLAY_PAUSE, learnedPlay);
+    
+    int learnedPrev = preferences.getInt("mvPrev", -1);
+    if (learnedPrev != -1) buttonManager.setExpectedMv(ButtonId::PREVIOUS, learnedPrev);
+    
+    int learnedNext = preferences.getInt("mvNext", -1);
+    if (learnedNext != -1) buttonManager.setExpectedMv(ButtonId::NEXT, learnedNext);
+    
+    int learnedVolDown = preferences.getInt("mvVolDown", -1);
+    if (learnedVolDown != -1) buttonManager.setExpectedMv(ButtonId::VOL_DOWN, learnedVolDown);
+    
+    int learnedVolUp = preferences.getInt("mvVolUp", -1);
+    if (learnedVolUp != -1) buttonManager.setExpectedMv(ButtonId::VOL_UP, learnedVolUp);
 }
 
 void saveState() {
@@ -268,7 +284,7 @@ void processConsole() {
         cmd.trim();
         
         if (cmd == "help") {
-            Serial.println("Commands: help, status, button, song, volume, play, pause, next, prev, sleep");
+            Serial.println("Commands: help, status, button, learn <btn>, song, volume, play, pause, next, prev, sleep");
         } else if (cmd == "status") {
             Serial.printf("Version: %s\n", VERSION);
             Serial.printf("Board: ESP32-C3 Super Mini\n");
@@ -279,6 +295,34 @@ void processConsole() {
             Serial.printf("State: %s\n", isPlaying ? "PLAYING" : "PAUSED");
         } else if (cmd == "button") {
             Serial.printf("mV_RAW = %d | mV_AVG = %d | BUTTON = %d\n", buttonManager.getCurrentMvRaw(), buttonManager.getCurrentMvAvg(), static_cast<int>(buttonManager.getCurrentButton()));
+        } else if (cmd.startsWith("learn ")) {
+            String btnStr = cmd.substring(6);
+            btnStr.trim();
+            int currentMv = buttonManager.getCurrentMvAvg();
+            
+            if (btnStr == "play") {
+                preferences.putInt("mvPlay", currentMv);
+                buttonManager.setExpectedMv(ButtonId::PLAY_PAUSE, currentMv);
+                Serial.printf("Learned PLAY: %d mV\n", currentMv);
+            } else if (btnStr == "prev") {
+                preferences.putInt("mvPrev", currentMv);
+                buttonManager.setExpectedMv(ButtonId::PREVIOUS, currentMv);
+                Serial.printf("Learned PREV: %d mV\n", currentMv);
+            } else if (btnStr == "next") {
+                preferences.putInt("mvNext", currentMv);
+                buttonManager.setExpectedMv(ButtonId::NEXT, currentMv);
+                Serial.printf("Learned NEXT: %d mV\n", currentMv);
+            } else if (btnStr == "voldown") {
+                preferences.putInt("mvVolDown", currentMv);
+                buttonManager.setExpectedMv(ButtonId::VOL_DOWN, currentMv);
+                Serial.printf("Learned VOLDOWN: %d mV\n", currentMv);
+            } else if (btnStr == "volup") {
+                preferences.putInt("mvVolUp", currentMv);
+                buttonManager.setExpectedMv(ButtonId::VOL_UP, currentMv);
+                Serial.printf("Learned VOLUP: %d mV\n", currentMv);
+            } else {
+                Serial.println("Unknown button. Use: learn play, learn prev, learn next, learn voldown, learn volup");
+            }
         } else if (cmd == "play") {
             if (dfPlayerOnline) {
                 dfPlayer.play(currentSong); // Replaced start()
@@ -317,7 +361,7 @@ void setup() {
     Serial.println("==================================");
     
     buttonManager.begin();
-    buttonManager.configureLadder(10000.0f, 47.0f, 220.0f, 1000.0f, 4700.0f, 10000.0f);
+    buttonManager.configureLadderSeries(10000.0f, 47.0f, 220.0f, 1000.0f, 4700.0f, 10000.0f);
     
     initPreferences();
     initAudio();
