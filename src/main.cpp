@@ -13,46 +13,13 @@ constexpr uint8_t PIN_ADC = 1;
 constexpr uint8_t PIN_UART_TX = 4;
 constexpr uint8_t PIN_UART_RX = 5;
 
-// ADC Button Thresholds (Configurable, contiguous to prevent gaps)
-constexpr float R_PULLUP = 10000.0;
-constexpr float R_PLAY_NOMINAL = 47.0;
-constexpr float R_PLAY_TOLERANCE = 0.05;
-constexpr float R_PLAY_MAX = R_PLAY_NOMINAL * (1.0 + R_PLAY_TOLERANCE);
+#include "ButtonManager.h"
 
-// Max ADC value for Play/Pause button + 10 for noise margin
-constexpr int ADC_PLAY_MAX = (int)((4095.0 * R_PLAY_MAX) / (R_PULLUP + R_PLAY_MAX)) + 10;
-constexpr int ADC_NEXT_MAX = 1295;
-constexpr int ADC_PREV_MAX = 1705;
-constexpr int ADC_VOLDOWN_MAX = 2345;
-constexpr int ADC_VOLUP_MAX = 3400;
-// Anything > 3400 is NO_BUTTON
+// Forward declaration for ButtonManager callback
+void handleButtonEvent(ButtonId btn, ButtonEvent event);
 
-// Timing constants
-constexpr unsigned long DEBOUNCE_DELAY_MS = 50;
-constexpr unsigned long LONG_PRESS_MS = 2000;
-constexpr unsigned long DOUBLE_PRESS_MS = 400;
-constexpr unsigned long HOLD_REPEAT_MS = 250;
-
-// ============================================================================
-// ENUMS
-// ============================================================================
-enum class ButtonId {
-    NONE,
-    PLAY_PAUSE,
-    NEXT,
-    PREVIOUS,
-    VOL_UP,
-    VOL_DOWN,
-    UNKNOWN
-};
-
-enum class ButtonEvent {
-    NONE,
-    SHORT_PRESS,
-    LONG_PRESS,
-    DOUBLE_PRESS,
-    HOLD
-};
+// Button Manager Instance
+ButtonManager buttonManager(PIN_ADC, handleButtonEvent);
 
 // ============================================================================
 // GLOBAL VARIABLES
@@ -67,23 +34,6 @@ int currentSong = 1;
 bool isPlaying = false;
 bool dfPlayerOnline = false;
 
-// Button state tracking
-ButtonId lastButtonRaw = ButtonId::NONE;
-ButtonId currentButton = ButtonId::NONE;
-unsigned long lastDebounceTime = 0;
-unsigned long buttonPressTime = 0;
-bool buttonHandledLongPress = false;
-bool isHolding = false;
-unsigned long lastHoldRepeat = 0;
-
-// Double press tracking
-ButtonId lastReleasedButton = ButtonId::NONE;
-unsigned long lastReleaseTime = 0;
-
-// ADC
-int currentAdcRaw = 4095;
-int currentAdcAvg = 4095;
-
 // ============================================================================
 // FUNCTION PROTOTYPES
 // ============================================================================
@@ -94,9 +44,6 @@ void saveState();
 void enterDeepSleep();
 void processConsole();
 void processAudioEvents();
-ButtonId decodeAdc(int adcValue);
-int getAveragedAdc();
-void handleButtonEvent(ButtonId btn, ButtonEvent event);
 
 // ============================================================================
 // AUDIO SUBSYSTEM
@@ -244,31 +191,7 @@ void enterDeepSleep() {
 // ============================================================================
 // BUTTON SUBSYSTEM
 // ============================================================================
-int getAveragedAdc() {
-    long sum = 0;
-    int minVal = 4096;
-    int maxVal = -1;
-    
-    // Take 34 samples, discard the highest and lowest, average the remaining 32
-    for (int i = 0; i < 34; i++) {
-        int val = analogRead(PIN_ADC);
-        if (val < minVal) minVal = val;
-        if (val > maxVal) maxVal = val;
-        sum += val;
-        delayMicroseconds(50);
-    }
-    sum = sum - minVal - maxVal;
-    return sum / 32;
-}
 
-ButtonId decodeAdc(int adcValue) {
-    if (adcValue > ADC_VOLUP_MAX) return ButtonId::NONE;
-    if (adcValue <= ADC_PLAY_MAX) return ButtonId::PLAY_PAUSE;
-    if (adcValue <= ADC_NEXT_MAX) return ButtonId::NEXT;
-    if (adcValue <= ADC_PREV_MAX) return ButtonId::PREVIOUS;
-    if (adcValue <= ADC_VOLDOWN_MAX) return ButtonId::VOL_DOWN;
-    return ButtonId::VOL_UP;
-}
 
 void handleButtonEvent(ButtonId btn, ButtonEvent event) {
     if (!dfPlayerOnline) {
@@ -334,70 +257,7 @@ void handleButtonEvent(ButtonId btn, ButtonEvent event) {
     }
 }
 
-void processButtons() {
-    unsigned long now = millis();
-    
-    currentAdcRaw = analogRead(PIN_ADC);
-    currentAdcAvg = getAveragedAdc();
-    
-    ButtonId readButton = decodeAdc(currentAdcAvg);
-    
-    // Debounce Logic
-    if (readButton != lastButtonRaw) {
-        lastDebounceTime = now;
-        lastButtonRaw = readButton;
-    }
-    
-    if ((now - lastDebounceTime) > DEBOUNCE_DELAY_MS) {
-        if (readButton != currentButton) {
-            // Button state changed
-            if (readButton != ButtonId::NONE) {
-                // Button Pressed
-                buttonPressTime = now;
-                buttonHandledLongPress = false;
-                isHolding = false;
-                
-                // Immediately trigger short press for volume buttons for responsiveness
-                if (readButton == ButtonId::VOL_UP || readButton == ButtonId::VOL_DOWN) {
-                    handleButtonEvent(readButton, ButtonEvent::SHORT_PRESS);
-                    buttonHandledLongPress = true; // Prevent triggering on release
-                    isHolding = true;
-                    lastHoldRepeat = now + 500; // Wait 500ms before repeating
-                }
-            } else {
-                // Button Released
-                if (!buttonHandledLongPress && currentButton != ButtonId::NONE) {
-                    // Check for double press
-                    if ((currentButton == ButtonId::NEXT || currentButton == ButtonId::PREVIOUS) && 
-                        currentButton == lastReleasedButton && (now - lastReleaseTime) < DOUBLE_PRESS_MS) {
-                        handleButtonEvent(currentButton, ButtonEvent::DOUBLE_PRESS);
-                        lastReleasedButton = ButtonId::NONE; // Reset
-                    } else {
-                        // Register short press
-                        handleButtonEvent(currentButton, ButtonEvent::SHORT_PRESS);
-                        lastReleasedButton = currentButton;
-                        lastReleaseTime = now;
-                    }
-                }
-            }
-            currentButton = readButton;
-        } else if (currentButton != ButtonId::NONE) {
-            // Button is being held
-            if (currentButton == ButtonId::PLAY_PAUSE && !buttonHandledLongPress && (now - buttonPressTime) > LONG_PRESS_MS) {
-                handleButtonEvent(currentButton, ButtonEvent::LONG_PRESS);
-                buttonHandledLongPress = true;
-            }
-            
-            // Continuous hold action for volume
-            if ((currentButton == ButtonId::VOL_UP || currentButton == ButtonId::VOL_DOWN) && isHolding) {
-                if (now >= lastHoldRepeat) {
-                    handleButtonEvent(currentButton, ButtonEvent::HOLD);
-                    lastHoldRepeat = now + HOLD_REPEAT_MS;
-                }
-            }
-        }
-    }
-}
+
 
 // ============================================================================
 // DEBUG SUBSYSTEM
