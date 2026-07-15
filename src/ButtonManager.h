@@ -32,16 +32,16 @@ public:
     void configureLadder(float rPullup, float rPlay, float rPrev, float rNext, float rVolDown, float rVolUp);
 
     // Debug access
-    int getCurrentRawAdc() const { return _currentAdcRaw; }
-    int getCurrentAvgAdc() const { return _currentAdcAvg; }
+    int getCurrentMvRaw() const { return _currentMvRaw; }
+    int getCurrentMvAvg() const { return _currentMvAvg; }
     ButtonId getCurrentButton() const { return _currentButton; }
 
 private:
     uint8_t _pin;
     ButtonCallback _cb;
     
-    int _currentAdcRaw;
-    int _currentAdcAvg;
+    int _currentMvRaw;
+    int _currentMvAvg;
     ButtonId _currentButton;
     ButtonId _lastButtonRaw;
     
@@ -54,13 +54,13 @@ private:
     ButtonId _lastReleasedButton;
     unsigned long _lastReleaseTime;
 
-    // Thresholds
-    int _threshPlayPrev;
-    int _threshPrevNext;
-    int _threshNextVolDown;
-    int _threshVolDownVolUp;
-    int _threshVolUpNone;
+    // Expected mV values
+    int _mvPlay;
+    int _mvPrev;
+    int _mvNext;
+    int _mvVolDown;
+    int _mvVolUp;
 
-    int getAveragedAdc();
-    ButtonId decodeAdc(int adcValue);
+    int getAveragedMilliVolts();
+    ButtonId decodeMilliVolts(int mv);
 };

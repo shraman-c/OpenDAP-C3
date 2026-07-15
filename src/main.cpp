@@ -278,7 +278,7 @@ void processConsole() {
             Serial.printf("Current Volume: %d\n", currentVolume);
             Serial.printf("State: %s\n", isPlaying ? "PLAYING" : "PAUSED");
         } else if (cmd == "button") {
-            Serial.printf("ADC_RAW = %d | ADC_AVG = %d | BUTTON = %d\n", buttonManager.getCurrentRawAdc(), buttonManager.getCurrentAvgAdc(), static_cast<int>(buttonManager.getCurrentButton()));
+            Serial.printf("mV_RAW = %d | mV_AVG = %d | BUTTON = %d\n", buttonManager.getCurrentMvRaw(), buttonManager.getCurrentMvAvg(), static_cast<int>(buttonManager.getCurrentButton()));
         } else if (cmd == "play") {
             if (dfPlayerOnline) {
                 dfPlayer.play(currentSong); // Replaced start()

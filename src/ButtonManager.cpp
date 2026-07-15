@@ -8,13 +8,13 @@ constexpr unsigned long HOLD_REPEAT_MS = 250;
 
 ButtonManager::ButtonManager(uint8_t pin, ButtonCallback cb)
     : _pin(pin), _cb(cb),
-      _currentAdcRaw(4095), _currentAdcAvg(4095),
+      _currentMvRaw(3300), _currentMvAvg(3300),
       _currentButton(ButtonId::NONE), _lastButtonRaw(ButtonId::NONE),
       _lastDebounceTime(0), _buttonPressTime(0),
       _buttonHandledLongPress(false), _isHolding(false), _lastHoldRepeat(0),
       _lastReleasedButton(ButtonId::NONE), _lastReleaseTime(0),
-      _threshPlayPrev(100), _threshPrevNext(500), _threshNextVolDown(1500),
-      _threshVolDownVolUp(2500), _threshVolUpNone(3500)
+      _mvPlay(15), _mvPrev(71), _mvNext(300),
+      _mvVolDown(1055), _mvVolUp(1650)
 {
 }
 
@@ -24,38 +24,30 @@ void ButtonManager::begin() {
 }
 
 void ButtonManager::configureLadder(float rPullup, float rPlay, float rPrev, float rNext, float rVolDown, float rVolUp) {
-    // Calculate expected nominal ADC values (12-bit ADC -> 4095 max)
-    float adcPlay    = 4095.0f * rPlay / (rPullup + rPlay);
-    float adcPrev    = 4095.0f * rPrev / (rPullup + rPrev);
-    float adcNext    = 4095.0f * rNext / (rPullup + rNext);
-    float adcVolDown = 4095.0f * rVolDown / (rPullup + rVolDown);
-    float adcVolUp   = 4095.0f * rVolUp / (rPullup + rVolUp);
-    float adcNone    = 4095.0f; // Pullup only
-
-    // Set thresholds halfway between nominal values
-    _threshPlayPrev     = (int)((adcPlay + adcPrev) / 2.0f);
-    _threshPrevNext     = (int)((adcPrev + adcNext) / 2.0f);
-    _threshNextVolDown  = (int)((adcNext + adcVolDown) / 2.0f);
-    _threshVolDownVolUp = (int)((adcVolDown + adcVolUp) / 2.0f);
-    _threshVolUpNone    = (int)((adcVolUp + adcNone) / 2.0f);
+    // Calculate expected nominal Millivolts (approximate V_ref = 3300mV)
+    _mvPlay    = (int)(3300.0f * rPlay / (rPullup + rPlay));
+    _mvPrev    = (int)(3300.0f * rPrev / (rPullup + rPrev));
+    _mvNext    = (int)(3300.0f * rNext / (rPullup + rNext));
+    _mvVolDown = (int)(3300.0f * rVolDown / (rPullup + rVolDown));
+    _mvVolUp   = (int)(3300.0f * rVolUp / (rPullup + rVolUp));
     
-    Serial.println("--- ButtonManager Thresholds ---");
-    Serial.printf("PLAY_PREV: %d\n", _threshPlayPrev);
-    Serial.printf("PREV_NEXT: %d\n", _threshPrevNext);
-    Serial.printf("NEXT_VOLDOWN: %d\n", _threshNextVolDown);
-    Serial.printf("VOLDOWN_VOLUP: %d\n", _threshVolDownVolUp);
-    Serial.printf("VOLUP_NONE: %d\n", _threshVolUpNone);
-    Serial.println("--------------------------------");
+    Serial.println("--- ButtonManager Expected mV ---");
+    Serial.printf("PLAY: %d mV\n", _mvPlay);
+    Serial.printf("PREV: %d mV\n", _mvPrev);
+    Serial.printf("NEXT: %d mV\n", _mvNext);
+    Serial.printf("VOLDOWN: %d mV\n", _mvVolDown);
+    Serial.printf("VOLUP: %d mV\n", _mvVolUp);
+    Serial.println("---------------------------------");
 }
 
-int ButtonManager::getAveragedAdc() {
+int ButtonManager::getAveragedMilliVolts() {
     long sum = 0;
-    int minVal = 4096;
+    int minVal = 4000;
     int maxVal = -1;
     
     // Take 34 samples, discard the highest and lowest, average the remaining 32
     for (int i = 0; i < 34; i++) {
-        int val = analogRead(_pin);
+        int val = analogReadMilliVolts(_pin);
         if (val < minVal) minVal = val;
         if (val > maxVal) maxVal = val;
         sum += val;
@@ -65,22 +57,36 @@ int ButtonManager::getAveragedAdc() {
     return sum / 32;
 }
 
-ButtonId ButtonManager::decodeAdc(int adcValue) {
-    if (adcValue > _threshVolUpNone)    return ButtonId::NONE;
-    if (adcValue <= _threshPlayPrev)    return ButtonId::PLAY_PAUSE;
-    if (adcValue <= _threshPrevNext)    return ButtonId::PREVIOUS;
-    if (adcValue <= _threshNextVolDown) return ButtonId::NEXT;
-    if (adcValue <= _threshVolDownVolUp)return ButtonId::VOL_DOWN;
-    return ButtonId::VOL_UP;
+ButtonId ButtonManager::decodeMilliVolts(int mv) {
+    if (mv > 2500) return ButtonId::NONE; // Pullup only (~3300mV)
+
+    int diffPlay = abs(mv - _mvPlay);
+    int diffPrev = abs(mv - _mvPrev);
+    int diffNext = abs(mv - _mvNext);
+    int diffVolDown = abs(mv - _mvVolDown);
+    int diffVolUp = abs(mv - _mvVolUp);
+
+    int minDiff = diffPlay;
+    ButtonId btn = ButtonId::PLAY_PAUSE;
+
+    if (diffPrev < minDiff) { minDiff = diffPrev; btn = ButtonId::PREVIOUS; }
+    if (diffNext < minDiff) { minDiff = diffNext; btn = ButtonId::NEXT; }
+    if (diffVolDown < minDiff) { minDiff = diffVolDown; btn = ButtonId::VOL_DOWN; }
+    if (diffVolUp < minDiff) { minDiff = diffVolUp; btn = ButtonId::VOL_UP; }
+
+    // If the closest match is still wildly off, it's noise
+    if (minDiff > 400) return ButtonId::NONE;
+
+    return btn;
 }
 
 void ButtonManager::loop() {
     unsigned long now = millis();
     
-    _currentAdcRaw = analogRead(_pin);
-    _currentAdcAvg = getAveragedAdc();
+    _currentMvRaw = analogReadMilliVolts(_pin);
+    _currentMvAvg = getAveragedMilliVolts();
     
-    ButtonId readButton = decodeAdc(_currentAdcAvg);
+    ButtonId readButton = decodeMilliVolts(_currentMvAvg);
     
     // Debounce Logic
     if (readButton != _lastButtonRaw) {
