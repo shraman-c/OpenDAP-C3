@@ -14,7 +14,13 @@ constexpr uint8_t PIN_UART_TX = 4;
 constexpr uint8_t PIN_UART_RX = 5;
 
 // ADC Button Thresholds (Configurable, contiguous to prevent gaps)
-constexpr int ADC_PLAY_MAX = 1135;
+constexpr float R_PULLUP = 10000.0;
+constexpr float R_PLAY_NOMINAL = 47.0;
+constexpr float R_PLAY_TOLERANCE = 0.05;
+constexpr float R_PLAY_MAX = R_PLAY_NOMINAL * (1.0 + R_PLAY_TOLERANCE);
+
+// Max ADC value for Play/Pause button + 10 for noise margin
+constexpr int ADC_PLAY_MAX = (int)((4095.0 * R_PLAY_MAX) / (R_PULLUP + R_PLAY_MAX)) + 10;
 constexpr int ADC_NEXT_MAX = 1295;
 constexpr int ADC_PREV_MAX = 1705;
 constexpr int ADC_VOLDOWN_MAX = 2345;
@@ -82,6 +88,7 @@ int currentAdcAvg = 4095;
 // FUNCTION PROTOTYPES
 // ============================================================================
 void initAudio();
+void printDFPlayerDiagnostics();
 void initPreferences();
 void saveState();
 void enterDeepSleep();
@@ -94,33 +101,86 @@ void handleButtonEvent(ButtonId btn, ButtonEvent event);
 // ============================================================================
 // AUDIO SUBSYSTEM
 // ============================================================================
+void printDFPlayerDiagnostics() {
+    Serial.println("--- DFPlayer Diagnostics ---");
+    int fileCount = dfPlayer.readFileCounts();
+    Serial.printf("File Count: %d\n", fileCount);
+    
+    int volume = dfPlayer.readVolume();
+    Serial.printf("Volume: %d\n", volume);
+    
+    int state = dfPlayer.readState();
+    Serial.printf("State: %d\n", state);
+    
+    int currentFile = dfPlayer.readCurrentFileNumber();
+    Serial.printf("Current File: %d\n", currentFile);
+    
+    Serial.println("----------------------------");
+}
+
 void initAudio() {
+    dfSerial.setRxBufferSize(256);
     dfSerial.begin(9600, SERIAL_8N1, PIN_UART_RX, PIN_UART_TX);
     Serial.println("Initializing DFPlayer Mini...");
     
-    // Give it some time to boot
-    delay(1000); 
+    // Give it 2 seconds to boot before initialization
+    delay(2000); 
 
+    // Set timeout to prevent infinite blocking
+    dfPlayer.setTimeOut(1000);
+
+    // Using doReset=false because some hardware clones fail to respond to the software reset command properly
     if (!dfPlayer.begin(dfSerial, /*isACK*/ true, /*doReset*/ false)) {
-        Serial.println("Error: DFPlayer Mini not found or SD card error!");
+        Serial.println("Error: DFPlayer Mini not found or communication error!");
         dfPlayerOnline = false;
     } else {
         Serial.println("DFPlayer Mini initialized.");
+        
+        // Allow time for SD card to mount after reset
+        delay(1500);
+        
+        int fileCount = dfPlayer.readFileCounts();
+        if (fileCount <= 0) {
+            Serial.println("Error: No SD Card found or SD Card is empty!");
+            dfPlayerOnline = false;
+            return;
+        }
+        
         dfPlayerOnline = true;
         
         dfPlayer.volume(currentVolume);
         dfPlayer.EQ(DFPLAYER_EQ_NORMAL);
         
+        printDFPlayerDiagnostics();
+        
         // Autoplay if we had a valid song
         if (currentSong > 0) {
             Serial.printf("Resuming song: %d\n", currentSong);
             dfPlayer.play(currentSong);
-            isPlaying = true;
+            delay(500); // Give it time to start
+            
+            int state = dfPlayer.readState();
+            if (state != 1) { // 1 indicates playing
+                Serial.println("Autoplay failed, retrying...");
+                dfPlayer.play(currentSong);
+                delay(500);
+                state = dfPlayer.readState();
+                if (state != 1) {
+                    Serial.println("Error: Autoplay retry failed.");
+                    isPlaying = false;
+                } else {
+                    isPlaying = true;
+                }
+            } else {
+                isPlaying = true;
+            }
         }
     }
 }
 
 void processAudioEvents() {
+    if (!dfPlayerOnline) return;
+    
     if (dfPlayer.available()) {
         uint8_t type = dfPlayer.readType();
         int value = dfPlayer.read();
@@ -142,6 +202,11 @@ void initPreferences() {
     preferences.begin("opendap", false);
     currentVolume = preferences.getInt("volume", 15);
     currentSong = preferences.getInt("song", 1);
+    
+    if (currentSong < 1) {
+        currentSong = 1;
+    }
+    
     Serial.printf("Loaded config - Volume: %d, Song: %d\n", currentVolume, currentSong);
 }
 
@@ -206,6 +271,13 @@ ButtonId decodeAdc(int adcValue) {
 }
 
 void handleButtonEvent(ButtonId btn, ButtonEvent event) {
+    if (!dfPlayerOnline) {
+        if (btn != ButtonId::NONE && event == ButtonEvent::SHORT_PRESS) {
+            Serial.println("Error: DFPlayer offline, ignoring button.");
+        }
+        return;
+    }
+
     if (btn == ButtonId::PLAY_PAUSE) {
         if (event == ButtonEvent::SHORT_PRESS) {
             if (isPlaying) {
@@ -213,7 +285,7 @@ void handleButtonEvent(ButtonId btn, ButtonEvent event) {
                 isPlaying = false;
                 Serial.println("Paused");
             } else {
-                dfPlayer.start();
+                dfPlayer.play(currentSong); // Replaced start() for compatibility
                 isPlaying = true;
                 Serial.println("Playing");
             }
@@ -223,8 +295,8 @@ void handleButtonEvent(ButtonId btn, ButtonEvent event) {
     } 
     else if (btn == ButtonId::NEXT) {
         if (event == ButtonEvent::SHORT_PRESS) {
-            dfPlayer.next();
             currentSong++;
+            dfPlayer.play(currentSong); // Replaced next() for compatibility
             isPlaying = true;
             Serial.println("Next Song");
         } else if (event == ButtonEvent::DOUBLE_PRESS) {
@@ -234,8 +306,8 @@ void handleButtonEvent(ButtonId btn, ButtonEvent event) {
     }
     else if (btn == ButtonId::PREVIOUS) {
         if (event == ButtonEvent::SHORT_PRESS) {
-            dfPlayer.previous();
             if (currentSong > 1) currentSong--;
+            dfPlayer.play(currentSong); // Replaced previous() for compatibility
             isPlaying = true;
             Serial.println("Previous Song");
         } else if (event == ButtonEvent::DOUBLE_PRESS) {
@@ -348,13 +420,21 @@ void processConsole() {
         } else if (cmd == "button") {
             Serial.printf("ADC_RAW = %d | ADC_AVG = %d | BUTTON = %d\n", currentAdcRaw, currentAdcAvg, static_cast<int>(currentButton));
         } else if (cmd == "play") {
-            dfPlayer.start();
-            isPlaying = true;
-            Serial.println("Playing");
+            if (dfPlayerOnline) {
+                dfPlayer.play(currentSong); // Replaced start()
+                isPlaying = true;
+                Serial.println("Playing");
+            } else {
+                Serial.println("Error: DFPlayer is offline.");
+            }
         } else if (cmd == "pause") {
-            dfPlayer.pause();
-            isPlaying = false;
-            Serial.println("Paused");
+            if (dfPlayerOnline) {
+                dfPlayer.pause();
+                isPlaying = false;
+                Serial.println("Paused");
+            } else {
+                Serial.println("Error: DFPlayer is offline.");
+            }
         } else if (cmd == "next") {
             handleButtonEvent(ButtonId::NEXT, ButtonEvent::SHORT_PRESS);
         } else if (cmd == "prev") {

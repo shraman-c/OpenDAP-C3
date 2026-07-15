@@ -20,7 +20,7 @@ Also include a 10kΩ Pull-Up resistor from GPIO1 to 3.3V.
 
 | Button | Resistor Value | Nominal ADC Range |
 |---|---|---|
-| Play/Pause | 100 Ω | 20 - 60 |
+| Play/Pause | 47 Ω | 15 - 30 |
 | Next | 220 Ω | 70 - 120 |
 | Previous | 1 kΩ | 250 - 500 |
 | Volume + | 4.7 kΩ | 900 - 1700 |
