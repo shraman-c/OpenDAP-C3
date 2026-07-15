@@ -278,7 +278,7 @@ void processConsole() {
             Serial.printf("Current Volume: %d\n", currentVolume);
             Serial.printf("State: %s\n", isPlaying ? "PLAYING" : "PAUSED");
         } else if (cmd == "button") {
-            Serial.printf("ADC_RAW = %d | ADC_AVG = %d | BUTTON = %d\n", currentAdcRaw, currentAdcAvg, static_cast<int>(currentButton));
+            Serial.printf("ADC_RAW = %d | ADC_AVG = %d | BUTTON = %d\n", buttonManager.getCurrentRawAdc(), buttonManager.getCurrentAvgAdc(), static_cast<int>(buttonManager.getCurrentButton()));
         } else if (cmd == "play") {
             if (dfPlayerOnline) {
                 dfPlayer.play(currentSong); // Replaced start()
@@ -316,15 +316,15 @@ void setup() {
     Serial.printf("OpenDAP-C3 %s\n", VERSION);
     Serial.println("==================================");
     
-    analogReadResolution(12);
-    pinMode(PIN_ADC, INPUT);
+    buttonManager.begin();
+    buttonManager.configureLadder(10000.0f, 47.0f, 220.0f, 1000.0f, 4700.0f, 10000.0f);
     
     initPreferences();
     initAudio();
 }
 
 void loop() {
-    processButtons();
+    buttonManager.loop();
     processAudioEvents();
     processConsole();
     
