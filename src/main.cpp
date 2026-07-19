@@ -9,7 +9,7 @@
 constexpr char VERSION[] = "v1.0.0";
 
 // Pins
-constexpr uint8_t PIN_ADC = 1;
+constexpr uint8_t PIN_ADC = 2;
 constexpr uint8_t PIN_UART_TX = 4;
 constexpr uint8_t PIN_UART_RX = 5;
 
