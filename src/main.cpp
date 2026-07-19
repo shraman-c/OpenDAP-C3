@@ -9,7 +9,7 @@
 constexpr char VERSION[] = "v1.0.0";
 
 // Pins
-constexpr uint8_t PIN_ADC = 2;
+constexpr uint8_t PIN_ADC = 3;
 constexpr uint8_t PIN_UART_TX = 4;
 constexpr uint8_t PIN_UART_RX = 5;
 
@@ -33,6 +33,18 @@ int currentVolume = 15;
 int currentSong = 1;
 bool isPlaying = false;
 bool dfPlayerOnline = false;
+int totalFileCount = 0;
+
+// Deferred save: write to flash only after state has been stable for a period
+unsigned long lastStateChangeMs = 0;
+bool stateDirty = false;
+constexpr unsigned long SAVE_DEBOUNCE_MS = 3000; // 3 seconds after last change
+
+// Non-blocking autoplay retry state machine
+enum class AutoplayState { IDLE, WAIT_FIRST, CHECK_FIRST, WAIT_RETRY, CHECK_RETRY };
+AutoplayState autoplayState = AutoplayState::IDLE;
+unsigned long autoplayTimerMs = 0;
+constexpr unsigned long AUTOPLAY_WAIT_MS = 500;
 
 // ============================================================================
 // FUNCTION PROTOTYPES
@@ -41,6 +53,9 @@ void initAudio();
 void printDFPlayerDiagnostics();
 void initPreferences();
 void saveState();
+void markStateDirty();
+void processDeferredSave();
+void processAutoplayRetry();
 void enterDeepSleep();
 void processConsole();
 void processAudioEvents();
@@ -86,8 +101,8 @@ void initAudio() {
         // Allow time for SD card to mount after reset
         delay(1500);
         
-        int fileCount = dfPlayer.readFileCounts();
-        if (fileCount <= 0) {
+        totalFileCount = dfPlayer.readFileCounts();
+        if (totalFileCount <= 0) {
             Serial.println("Error: No SD Card found or SD Card is empty!");
             dfPlayerOnline = false;
             return;
@@ -95,32 +110,22 @@ void initAudio() {
         
         dfPlayerOnline = true;
         
+        // Clamp restored song to valid range
+        if (currentSong > totalFileCount) {
+            currentSong = 1;
+        }
+        
         dfPlayer.volume(currentVolume);
         dfPlayer.EQ(DFPLAYER_EQ_NORMAL);
         
         printDFPlayerDiagnostics();
         
-        // Autoplay if we had a valid song
+        // Kick off non-blocking autoplay if we had a valid song
         if (currentSong > 0) {
             Serial.printf("Resuming song: %d\n", currentSong);
             dfPlayer.play(currentSong);
-            delay(500); // Give it time to start
-            
-            int state = dfPlayer.readState();
-            if (state != 1) { // 1 indicates playing
-                Serial.println("Autoplay failed, retrying...");
-                dfPlayer.play(currentSong);
-                delay(500);
-                state = dfPlayer.readState();
-                if (state != 1) {
-                    Serial.println("Error: Autoplay retry failed.");
-                    isPlaying = false;
-                } else {
-                    isPlaying = true;
-                }
-            } else {
-                isPlaying = true;
-            }
+            autoplayState = AutoplayState::WAIT_FIRST;
+            autoplayTimerMs = millis();
         }
     }
 }
@@ -134,11 +139,65 @@ void processAudioEvents() {
         
         if (type == DFPlayerPlayFinished) {
             Serial.printf("Song %d finished.\n", value);
-            currentSong = value + 1; // Simplistic approach, normally query total files
+            currentSong = value + 1;
+            // Wrap around to song 1 if we've exceeded the file count
+            if (totalFileCount > 0 && currentSong > totalFileCount) {
+                currentSong = 1;
+                Serial.println("Playlist wrapped to song 1.");
+            }
             dfPlayer.play(currentSong);
+            markStateDirty();
         } else if (type == DFPlayerError) {
             Serial.printf("DFPlayer Error: %d\n", value);
         }
+    }
+}
+
+// Non-blocking autoplay retry (called from loop)
+void processAutoplayRetry() {
+    if (autoplayState == AutoplayState::IDLE) return;
+    
+    unsigned long now = millis();
+    
+    switch (autoplayState) {
+        case AutoplayState::WAIT_FIRST:
+            if (now - autoplayTimerMs >= AUTOPLAY_WAIT_MS) {
+                autoplayState = AutoplayState::CHECK_FIRST;
+            }
+            break;
+        case AutoplayState::CHECK_FIRST: {
+            int state = dfPlayer.readState();
+            if (state == 1) { // 1 = playing
+                isPlaying = true;
+                autoplayState = AutoplayState::IDLE;
+                Serial.println("Autoplay confirmed.");
+            } else {
+                Serial.println("Autoplay failed, retrying...");
+                dfPlayer.play(currentSong);
+                autoplayTimerMs = millis();
+                autoplayState = AutoplayState::WAIT_RETRY;
+            }
+            break;
+        }
+        case AutoplayState::WAIT_RETRY:
+            if (now - autoplayTimerMs >= AUTOPLAY_WAIT_MS) {
+                autoplayState = AutoplayState::CHECK_RETRY;
+            }
+            break;
+        case AutoplayState::CHECK_RETRY: {
+            int state = dfPlayer.readState();
+            if (state == 1) {
+                isPlaying = true;
+                Serial.println("Autoplay retry succeeded.");
+            } else {
+                isPlaying = false;
+                Serial.println("Error: Autoplay retry failed.");
+            }
+            autoplayState = AutoplayState::IDLE;
+            break;
+        }
+        default:
+            break;
     }
 }
 
@@ -176,7 +235,19 @@ void initPreferences() {
 void saveState() {
     preferences.putInt("volume", currentVolume);
     preferences.putInt("song", currentSong);
+    stateDirty = false;
     Serial.println("State saved to Preferences.");
+}
+
+void markStateDirty() {
+    stateDirty = true;
+    lastStateChangeMs = millis();
+}
+
+void processDeferredSave() {
+    if (stateDirty && (millis() - lastStateChangeMs >= SAVE_DEBOUNCE_MS)) {
+        saveState();
+    }
 }
 
 // ============================================================================
@@ -196,9 +267,9 @@ void enterDeepSleep() {
     Serial.println("Entering Deep Sleep now.");
     Serial.flush();
     
-    // Configure wake up on GPIO1 going low (requires proper pull-up circuit)
+    // Configure wake up on PIN_ADC (GPIO3) going low (requires proper pull-up circuit)
     // Note: ESP32-C3 can wake from deep sleep using RTC GPIOs
-    // GPIO1 is an RTC GPIO.
+    // GPIO3 is an RTC GPIO.
     esp_deep_sleep_enable_gpio_wakeup(1ULL << PIN_ADC, ESP_GPIO_WAKEUP_GPIO_LOW);
     
     esp_deep_sleep_start();
@@ -235,8 +306,12 @@ void handleButtonEvent(ButtonId btn, ButtonEvent event) {
     else if (btn == ButtonId::NEXT) {
         if (event == ButtonEvent::SHORT_PRESS) {
             currentSong++;
+            if (totalFileCount > 0 && currentSong > totalFileCount) {
+                currentSong = 1;
+            }
             dfPlayer.play(currentSong); // Replaced next() for compatibility
             isPlaying = true;
+            markStateDirty();
             Serial.println("Next Song");
         } else if (event == ButtonEvent::DOUBLE_PRESS) {
             // Next Folder - pseudo implementation as DFPlayer needs folder ID
@@ -245,9 +320,14 @@ void handleButtonEvent(ButtonId btn, ButtonEvent event) {
     }
     else if (btn == ButtonId::PREVIOUS) {
         if (event == ButtonEvent::SHORT_PRESS) {
-            if (currentSong > 1) currentSong--;
+            if (currentSong > 1) {
+                currentSong--;
+            } else if (totalFileCount > 0) {
+                currentSong = totalFileCount; // Wrap to last song
+            }
             dfPlayer.play(currentSong); // Replaced previous() for compatibility
             isPlaying = true;
+            markStateDirty();
             Serial.println("Previous Song");
         } else if (event == ButtonEvent::DOUBLE_PRESS) {
             Serial.println("Previous Folder (Placeholder)");
@@ -258,6 +338,7 @@ void handleButtonEvent(ButtonId btn, ButtonEvent event) {
             if (currentVolume < 30) {
                 currentVolume++;
                 dfPlayer.volume(currentVolume);
+                markStateDirty();
                 Serial.printf("Volume Up: %d\n", currentVolume);
             }
         }
@@ -267,6 +348,7 @@ void handleButtonEvent(ButtonId btn, ButtonEvent event) {
             if (currentVolume > 0) {
                 currentVolume--;
                 dfPlayer.volume(currentVolume);
+                markStateDirty();
                 Serial.printf("Volume Down: %d\n", currentVolume);
             }
         }
@@ -370,6 +452,8 @@ void setup() {
 void loop() {
     buttonManager.loop();
     processAudioEvents();
+    processAutoplayRetry();
+    processDeferredSave();
     processConsole();
     
     // Very short delay to prevent watchdog starvation

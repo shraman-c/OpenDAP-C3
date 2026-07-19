@@ -15,8 +15,8 @@ The following table describes the pin connections between the ESP32-C3 Super Min
 > Note: Audio output from the DFPlayer is taken directly from the DAC_R and DAC_L pins to the 3.5mm Headphone Jack.
 
 ## Resistor Ladder Buttons
-Connect a single wire from **GPIO1** to the button ladder. 
-Also include a 10kΩ Pull-Up resistor from GPIO1 to 3.3V.
+Connect a single wire from **GPIO3** to the button ladder. 
+Also include a 10kΩ Pull-Up resistor from GPIO3 to 3.3V.
 
 | Button | Resistor Value | Nominal ADC Range |
 |---|---|---|
