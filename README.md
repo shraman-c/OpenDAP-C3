@@ -54,6 +54,6 @@ We welcome contributions to the OpenDAP-C3 project! If you'd like to help out or
 5. Submit a Pull Request back to the main repository!
 
 ## License & Copyright
-Copyright (c) 2026 Shraman C.
+Copyright © 2026 - Shraman C.
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
